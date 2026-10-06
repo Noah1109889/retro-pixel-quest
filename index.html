@@ -209,7 +209,7 @@
         </div>
         <div class="stat">
           <span>Coins:</span>
-          <span class="stat-value" id="score">0</span>
+          <span class="stat-value" id="coins">0</span>
         </div>
       </div>
 
@@ -233,6 +233,7 @@
           CLICK Block - Equip<br/>
           Q - Transform<br/>
           LEFT CLICK - Attack<br/>
+          S - Use Shop<br/>
           R - Reset Level
         </div>
       </div>
@@ -248,11 +249,11 @@
     const ctx = canvas.getContext('2d', { alpha: false });
 
     const RARITIES = {
-      common: { color: '#4caf50', label: 'COMMON', power: 1 },
-      uncommon: { color: '#2196f3', label: 'UNCOMMON', power: 1.5 },
-      rare: { color: '#9c27b0', label: 'RARE', power: 2 },
-      epic: { color: '#ff9800', label: 'EPIC', power: 2.5 },
-      legendary: { color: '#ffc107', label: 'LEGENDARY', power: 3 }
+      common: { color: '#4caf50', label: 'COMMON', power: 1, cost: 50 },
+      uncommon: { color: '#2196f3', label: 'UNCOMMON', power: 1.5, cost: 100 },
+      rare: { color: '#9c27b0', label: 'RARE', power: 2, cost: 200 },
+      epic: { color: '#ff9800', label: 'EPIC', power: 2.5, cost: 400 },
+      legendary: { color: '#ffc107', label: 'LEGENDARY', power: 3, cost: 800 }
     };
 
     const BEASTS = {
@@ -263,34 +264,26 @@
       legendary: { name: 'Titan', damage: 20 }
     };
 
-    // Player sprite (your 8-bit character)
-    const playerSprite = [
-      0b00111100, // Head top
-      0b01100110, // Head
-      0b01100110, // Head
-      0b00111100, // Head bottom
-      0b00011000, // Body top
-      0b00111100, // Body middle
-      0b00111100, // Body middle
-      0b00011000  // Legs
-    ];
-
     const game = {
       level: 1,
-      score: 0,
+      coins: 0,
       health: 100,
       maxHealth: 100,
       blocks: [],
+      groundBlocks: [],
+      coins: [],
+      particles: [],
+      mapOffsetX: 0,
+      mapOffsetY: 0,
+      mapWidth: 3200,
+      mapHeight: 2400,
       selectedBlock: null,
       equippedBeast: null,
       transformActive: false,
       bossDefeated: false,
       bosses: [],
-      particles: [],
-      mapOffsetX: 0,
-      mapOffsetY: 0,
-      mapWidth: 3200,
-      mapHeight: 2400
+      shopOpen: false,
+      collectedCoins: 0
     };
 
     const player = {
@@ -315,7 +308,6 @@
     let mouseX = 0;
     let mouseY = 0;
 
-    // Tile map system
     const TILE_SIZE = 40;
     const TILES = {
       EMPTY: 0,
@@ -325,34 +317,28 @@
       PLATFORM: 4
     };
 
+    let terrain = generateTerrainMap();
+
     function generateTerrainMap() {
       const tiles = [];
       for (let y = 0; y < game.mapHeight / TILE_SIZE; y++) {
         tiles[y] = [];
         for (let x = 0; x < game.mapWidth / TILE_SIZE; x++) {
-          // Bottom ground
           if (y > (game.mapHeight / TILE_SIZE) - 4) {
             tiles[y][x] = TILES.GRASS;
-          }
-          // Platforms
-          else if (y === 10 && x > 5 && x < 20) {
+          } else if (y === 10 && x > 5 && x < 20) {
             tiles[y][x] = TILES.PLATFORM;
-          }
-          else if (y === 20 && x > 25 && x < 40) {
+          } else if (y === 20 && x > 25 && x < 40) {
             tiles[y][x] = TILES.PLATFORM;
-          }
-          else if (y === 15 && x > 45 && x < 60) {
+          } else if (y === 15 && x > 45 && x < 60) {
             tiles[y][x] = TILES.PLATFORM;
-          }
-          else {
+          } else {
             tiles[y][x] = TILES.EMPTY;
           }
         }
       }
       return tiles;
     }
-
-    let terrain = generateTerrainMap();
 
     function getTileAt(worldX, worldY) {
       const tileX = Math.floor(worldX / TILE_SIZE);
@@ -369,21 +355,26 @@
       setTimeout(() => { msg.textContent = ''; }, 2000);
     }
 
-    function generateBlocks() {
-      game.blocks = [];
-      const rarityKeys = Object.keys(RARITIES);
-      
-      for (let i = 0; i < 20 + game.level * 3; i++) {
-        const rarity = rarityKeys[Math.floor(Math.random() * rarityKeys.length)];
-        game.blocks.push({
+    function generateGroundBlocks() {
+      game.groundBlocks = [];
+      const groundLevel = game.mapHeight - TILE_SIZE * 3;
+      for (let i = 0; i < 15 + game.level * 2; i++) {
+        const rarity = Object.keys(RARITIES)[Math.floor(Math.random() * Object.keys(RARITIES).length)];
+        game.groundBlocks.push({
           x: Math.random() * (game.mapWidth - 60) + 30,
-          y: Math.random() * (game.mapHeight - 300) + 100,
+          y: groundLevel + (Math.random() * 20 - 10),
           rarity,
           collected: false,
-          bob: Math.random() * Math.PI * 2
+          bob: Math.random() * Math.PI * 2,
+          rotation: Math.random() * Math.PI * 2,
+          floatingOffset: Math.random() * 15,
+          rarityIndex: Object.keys(RARITIES).indexOf(rarity)
         });
       }
+    }
 
+    function generateBlocks() {
+      generateGroundBlocks();
       game.bosses = [];
       for (let i = 0; i < Math.min(3, game.level); i++) {
         game.bosses.push({
@@ -402,10 +393,46 @@
       }
     }
 
+    function createCoin(x, y, value = 10) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 3 + Math.random() * 2;
+      game.coins.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: -8 + Math.random() * 2,
+        value,
+        gravity: 0.3,
+        life: 120,
+        maxLife: 120,
+        rotation: Math.random() * Math.PI * 2,
+        collected: false
+      });
+    }
+
+    function createBlockDrop(x, y, rarity) {
+      game.groundBlocks.push({
+        x,
+        y,
+        rarity,
+        collected: false,
+        bob: Math.random() * Math.PI * 2,
+        rotation: Math.random() * Math.PI * 2,
+        floatingOffset: Math.random() * 15,
+        fromBossDrop: true,
+        dropAnimation: 0,
+        rarityIndex: Object.keys(RARITIES).indexOf(rarity)
+      });
+    }
+
+    function createParticle(x, y, vx, vy, life, color) {
+      game.particles.push({ x, y, vx, vy, life, maxLife: life, color, gravity: 0.2 });
+    }
+
     function updateUI() {
       document.getElementById('level').textContent = game.level;
       document.getElementById('health').textContent = `${Math.max(0, game.health)}/100`;
-      document.getElementById('score').textContent = game.score;
+      document.getElementById('coins').textContent = game.collectedCoins;
 
       const beastSlot = document.getElementById('beastSlot');
       if (player.isTransformed && game.equippedBeast) {
@@ -419,7 +446,7 @@
 
       const invEl = document.getElementById('inventory');
       invEl.innerHTML = '';
-      game.blocks.filter(b => b.collected).forEach((block, idx) => {
+      game.groundBlocks.filter(block => block.collected).forEach((block) => {
         const item = document.createElement('div');
         item.className = 'inv-item';
         if (game.selectedBlock === block) item.classList.add('selected');
@@ -435,8 +462,33 @@
     function collectBlock(block) {
       if (!block.collected) {
         block.collected = true;
-        game.score += RARITIES[block.rarity].power * 50;
+        game.collectedCoins += RARITIES[block.rarity].power * 50;
         showMessage(`Collected ${BEASTS[block.rarity].name} Block!`);
+        for (let i = 0; i < 8; i++) {
+          const angle = (Math.PI * 2 * i) / 8;
+          createParticle(block.x, block.y, Math.cos(angle) * 3, Math.sin(angle) * 3, 60, RARITIES[block.rarity].color);
+        }
+      }
+    }
+
+    function buyFromShop(rarity) {
+      const cost = RARITIES[rarity].cost;
+      if (game.collectedCoins >= cost) {
+        game.collectedCoins -= cost;
+        game.groundBlocks.push({
+          x: player.x + 30,
+          y: player.y - 50,
+          rarity,
+          collected: false,
+          bob: Math.random() * Math.PI * 2,
+          rotation: Math.random() * Math.PI * 2,
+          floatingOffset: Math.random() * 15,
+          fromShop: true,
+          rarityIndex: Object.keys(RARITIES).indexOf(rarity)
+        });
+        showMessage(`Bought ${BEASTS[rarity].name} Block!`);
+      } else {
+        showMessage(`Need ${cost - game.collectedCoins} more coins!`);
       }
     }
 
@@ -463,7 +515,7 @@
         showMessage('Game Over! Resetting...');
         setTimeout(() => {
           game.level = 1;
-          game.score = 0;
+          game.collectedCoins = 0;
           game.health = 100;
           player.x = 500;
           player.y = 400;
@@ -478,11 +530,21 @@
 
     function damageBoss(boss, damage) {
       boss.health -= damage;
-      game.score += damage * 5;
+      game.collectedCoins += damage * 5;
+      for (let i = 0; i < 5; i++) {
+        createParticle(boss.x, boss.y, (Math.random() - 0.5) * 4, Math.random() * -4, 40, '#ff0000');
+      }
       if (boss.health <= 0) {
         boss.health = 0;
         boss.defeated = true;
         showMessage('Boss Defeated!');
+        for (let i = 0; i < 8; i++) {
+          createCoin(boss.x, boss.y, 25 + Math.random() * 25);
+        }
+        for (let i = 0; i < 2 + Math.floor(Math.random() * 2); i++) {
+          const rarity = Object.keys(RARITIES)[Math.floor(Math.random() * Object.keys(RARITIES).length)];
+          createBlockDrop(boss.x + Math.random() * 40 - 20, boss.y - 30, rarity);
+        }
       }
     }
 
@@ -503,11 +565,9 @@
     }
 
     function update() {
-      // Gravity
       player.velocityY += 0.8;
       player.velocityY = Math.min(player.velocityY, 12);
 
-      // Input
       let moveX = 0;
       if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
         moveX -= player.isTransformed ? 6 : 4;
@@ -522,10 +582,7 @@
       player.x += player.velocityX;
       player.y += player.velocityY;
 
-      // Collision detection
       player.onGround = false;
-      
-      // Check tiles below
       for (let dx = 0; dx < player.width; dx += 10) {
         const tile = getTileAt(player.x + dx, player.y + player.height + 1);
         if (tile !== TILES.EMPTY) {
@@ -536,7 +593,6 @@
         }
       }
 
-      // Boundaries
       if (player.x < 0) player.x = 0;
       if (player.x + player.width > game.mapWidth) player.x = game.mapWidth - player.width;
       if (player.y > game.mapHeight + 200) {
@@ -544,30 +600,60 @@
         player.y = 200;
       }
 
-      // Update camera
       game.mapOffsetX = player.x - canvas.width / 3;
       game.mapOffsetY = player.y - canvas.height / 2;
       game.mapOffsetX = Math.max(0, Math.min(game.mapOffsetX, game.mapWidth - canvas.width));
       game.mapOffsetY = Math.max(0, Math.min(game.mapOffsetY, game.mapHeight - canvas.height));
 
-      // Block collection
-      game.blocks.forEach(block => {
-        if (!block.collected && 
-            Math.hypot(player.x - block.x, player.y - block.y) < 40) {
+      game.groundBlocks.forEach(block => {
+        if (!block.collected && Math.hypot(player.x - block.x, player.y - block.y) < 40) {
           collectBlock(block);
         }
       });
 
-      // Boss AI and collision
+      game.coins.forEach(coin => {
+        if (!coin.collected && Math.hypot(player.x - coin.x, player.y - coin.y) < 40) {
+          coin.collected = true;
+          game.collectedCoins += coin.value;
+          for (let i = 0; i < 10; i++) {
+            createParticle(coin.x, coin.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 50, '#ffd54f');
+          }
+        }
+        if (!coin.collected) {
+          coin.x += coin.vx;
+          coin.y += coin.vy;
+          coin.vy += coin.gravity;
+          coin.life--;
+          coin.rotation += 0.15;
+        }
+      });
+
+      game.groundBlocks.forEach(block => {
+        if (block.fromBossDrop) {
+          block.y += 1;
+          if (block.y > game.mapHeight - TILE_SIZE * 3) {
+            block.y = game.mapHeight - TILE_SIZE * 3;
+          }
+        }
+        if (block.fromShop) {
+          block.y += Math.sin(Date.now() * 0.004 + block.bob) * 1.5;
+        }
+        block.rotation += 0.02;
+      });
+
+      game.particles.forEach((p, idx) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity;
+        p.life--;
+        if (p.life <= 0) game.particles.splice(idx, 1);
+      });
+
       game.bosses.forEach(boss => {
         if (!boss.defeated) {
-          // Boss simple AI
           boss.animFrame = (boss.animFrame + 1) % 20;
-          
           if (Math.hypot(player.x - boss.x, player.y - boss.y) < 300) {
-            if (Math.random() < 0.02) {
-              boss.direction *= -1;
-            }
+            if (Math.random() < 0.02) boss.direction *= -1;
             boss.velocityX = boss.direction * 2;
           } else {
             boss.velocityX *= 0.95;
@@ -576,7 +662,6 @@
           boss.x += boss.velocityX;
           boss.y += 0.5;
 
-          // Boss collision
           if (Math.hypot(player.x - boss.x, player.y - boss.y) < 50) {
             if (player.isTransformed && player.isAttacking) {
               const damage = 5 * player.power;
@@ -589,7 +674,6 @@
         }
       });
 
-      // Transform duration
       if (player.isTransformed) {
         player.transformTimer -= 0.016;
         if (player.transformTimer <= 0) {
@@ -598,16 +682,65 @@
         }
       }
 
-      // Attack cooldown
-      if (player.attackFrame > 0) {
-        player.attackFrame--;
-      }
-
-      // Animation
+      if (player.attackFrame > 0) player.attackFrame--;
       player.animationFrame = (player.animationFrame + 1) % 8;
 
       checkBossDefeat();
       updateUI();
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = '#87ceeb';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      const cloudOffset = (Date.now() * 0.00005) % canvas.width;
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        ctx.arc(100 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
+        ctx.arc(130 + i * 300 + cloudOffset, 40, 35, 0, Math.PI * 2);
+        ctx.arc(160 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawBuildings();
+    }
+
+    function drawBuildings() {
+      const buildingHeights = [120, 170, 150, 200, 140, 180, 160, 190];
+      buildingHeights.forEach((height, idx) => {
+        const screenX = 100 + idx * 300 - game.mapOffsetX;
+        if (screenX > -150 && screenX < canvas.width + 150) {
+          ctx.fillStyle = '#8b6914';
+          ctx.fillRect(screenX, canvas.height - 200 - height, 120, height);
+          ctx.strokeStyle = '#5c4a0a';
+          ctx.strokeRect(screenX, canvas.height - 200 - height, 120, height);
+
+          ctx.fillStyle = '#ffeb3b';
+          for (let wy = 0; wy < Math.floor(height / 40); wy++) {
+            for (let wx = 0; wx < 3; wx++) {
+              const winX = screenX + 15 + wx * 30;
+              const winY = canvas.height - 200 - height + 15 + wy * 40;
+              ctx.fillRect(winX, winY, 20, 20);
+              ctx.strokeStyle = '#333';
+              ctx.strokeRect(winX, winY, 20, 20);
+              ctx.beginPath();
+              ctx.moveTo(winX + 10, winY);
+              ctx.lineTo(winX + 10, winY + 20);
+              ctx.moveTo(winX, winY + 10);
+              ctx.lineTo(winX + 20, winY + 10);
+              ctx.stroke();
+            }
+          }
+
+          ctx.fillStyle = '#d32f2f';
+          ctx.beginPath();
+          ctx.moveTo(screenX, canvas.height - 200 - height);
+          ctx.lineTo(screenX + 60, canvas.height - 200 - height - 30);
+          ctx.lineTo(screenX + 120, canvas.height - 200 - height);
+          ctx.fill();
+        }
+      });
     }
 
     function drawTerrain() {
@@ -619,7 +752,6 @@
       for (let ty = startTileY; ty < endTileY; ty++) {
         for (let tx = startTileX; tx < endTileX; tx++) {
           if (ty < 0 || ty >= terrain.length || tx < 0 || tx >= terrain[ty].length) continue;
-
           const tile = terrain[ty][tx];
           const screenX = tx * TILE_SIZE - game.mapOffsetX;
           const screenY = ty * TILE_SIZE - game.mapOffsetY;
@@ -629,11 +761,15 @@
             ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
             ctx.fillStyle = '#3d7f1f';
             ctx.fillRect(screenX + 2, screenY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+            ctx.fillStyle = '#4caf50';
+            ctx.fillRect(screenX + 5, screenY, TILE_SIZE - 10, 3);
           } else if (tile === TILES.PLATFORM) {
             ctx.fillStyle = '#8b4513';
             ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
             ctx.fillStyle = '#a0522d';
             ctx.fillRect(screenX + 2, screenY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+            ctx.fillStyle = '#cd853f';
+            ctx.fillRect(screenX + 4, screenY + 4, TILE_SIZE - 8, 2);
           }
         }
       }
@@ -650,52 +786,114 @@
       }
 
       if (player.isTransformed) {
-        // Transform mode - larger beast form
         ctx.fillStyle = '#ff6b00';
-        ctx.fillRect(screenX - player.width/2, screenY - player.height/2, player.width * 1.5, player.height * 1.5);
+        ctx.fillRect(screenX - player.width / 2, screenY - player.height / 2, player.width * 1.5, player.height * 1.5);
         ctx.fillStyle = '#ffa500';
         ctx.beginPath();
-        ctx.arc(screenX, screenY - player.height/3, 20, 0, Math.PI * 2);
+        ctx.arc(screenX, screenY - player.height / 3, 20, 0, Math.PI * 2);
         ctx.fill();
-        
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(screenX - 8, screenY - player.height / 3 - 5, 3, 0, Math.PI * 2);
+        ctx.arc(screenX + 8, screenY - player.height / 3 - 5, 3, 0, Math.PI * 2);
+        ctx.fill();
         if (player.isAttacking) {
           ctx.fillStyle = '#ffff00';
           ctx.fillRect(screenX + 30, screenY - 10, 20, 20);
         }
       } else {
-        // Normal player sprite
         ctx.fillStyle = '#a78bfa';
-        ctx.fillRect(screenX, screenY - 30, player.width, 30); // Hair
+        ctx.fillRect(screenX, screenY - 30, player.width, 30);
         ctx.fillStyle = '#fdbf69';
-        ctx.fillRect(screenX + 8, screenY - 24, 16, 10); // Face
+        ctx.fillRect(screenX + 8, screenY - 24, 16, 10);
         ctx.fillStyle = '#000000';
-        ctx.fillRect(screenX + 12, screenY - 20, 3, 3); // Eyes
+        ctx.fillRect(screenX + 12, screenY - 20, 3, 3);
         ctx.fillRect(screenX + 19, screenY - 20, 3, 3);
-        
         ctx.fillStyle = '#000000';
-        ctx.fillRect(screenX + 4, screenY, player.width - 8, player.height - 30); // Body
+        ctx.fillRect(screenX + 4, screenY, player.width - 8, player.height - 30);
         ctx.fillStyle = '#3d3d5c';
-        ctx.fillRect(screenX + 6, screenY - 8, player.width - 12, 8); // Belt
+        ctx.fillRect(screenX + 6, screenY - 8, player.width - 12, 8);
+        const armSwing = Math.sin(player.animationFrame * 0.4) * 5;
+        ctx.fillStyle = '#fdbf69';
+        ctx.fillRect(screenX - 8, screenY - 5 + armSwing, 6, 15);
+        ctx.fillRect(screenX + player.width + 2, screenY - 5 - armSwing, 6, 15);
       }
-
       ctx.restore();
     }
 
     function drawBlocks() {
-      game.blocks.forEach(block => {
+      game.groundBlocks.forEach(block => {
         if (!block.collected) {
           const screenX = block.x - game.mapOffsetX;
           const screenY = block.y - game.mapOffsetY + Math.sin(Date.now() * 0.003 + block.bob) * 5;
 
+          ctx.save();
+          ctx.translate(screenX, screenY);
+          ctx.rotate(block.rotation);
+
           ctx.fillStyle = RARITIES[block.rarity].color;
-          ctx.fillRect(screenX - 16, screenY - 16, 32, 32);
+          ctx.fillRect(-16, -16, 32, 32);
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(screenX - 12, screenY - 12, 24, 24);
+          ctx.fillRect(-12, -12, 24, 24);
           ctx.fillStyle = RARITIES[block.rarity].color;
-          ctx.font = 'bold 12px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText('◆', screenX, screenY + 5);
+          ctx.beginPath();
+          ctx.moveTo(0, -8);
+          ctx.lineTo(8, 0);
+          ctx.lineTo(0, 8);
+          ctx.lineTo(-8, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.beginPath();
+          ctx.arc(-5, -5, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
+      });
+    }
+
+    function drawCoins() {
+      game.coins.forEach(coin => {
+        if (!coin.collected) {
+          const screenX = coin.x - game.mapOffsetX;
+          const screenY = coin.y - game.mapOffsetY;
+          const alpha = coin.life / coin.maxLife;
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(screenX, screenY);
+          ctx.rotate(coin.rotation);
+          ctx.fillStyle = '#ffc107';
+          ctx.beginPath();
+          ctx.arc(0, 0, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffeb3b';
+          ctx.beginPath();
+          ctx.arc(0, 0, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffc107';
+          ctx.font = 'bold 8px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('$', 0, 0);
+          ctx.restore();
+          coin.rotation += 0.1;
+        }
+      });
+    }
+
+    function drawParticles() {
+      game.particles.forEach(p => {
+        const screenX = p.x - game.mapOffsetX;
+        const screenY = p.y - game.mapOffsetY;
+        const alpha = p.life / p.maxLife;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       });
     }
 
@@ -705,63 +903,108 @@
           const screenX = boss.x - game.mapOffsetX;
           const screenY = boss.y - game.mapOffsetY;
 
-          ctx.fillStyle = '#ff0000';
-          ctx.fillRect(screenX - boss.width/2, screenY - boss.height/2, boss.width, boss.height);
-          ctx.fillStyle = '#ffcc00';
-          ctx.fillRect(screenX - boss.width/2 + 6, screenY - boss.height/2 + 6, boss.width - 12, boss.height - 12);
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          ctx.beginPath();
+          ctx.ellipse(screenX, screenY + boss.height / 2 + 10, boss.width / 1.5, 8, 0, 0, Math.PI * 2);
+          ctx.fill();
 
-          // Boss name
+          ctx.fillStyle = '#ff0000';
+          ctx.fillRect(screenX - boss.width / 2, screenY - boss.height / 2, boss.width, boss.height);
+          ctx.fillStyle = '#ffcc00';
+          ctx.fillRect(screenX - boss.width / 2 + 6, screenY - boss.height / 2 + 6, boss.width - 12, boss.height - 12);
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.arc(screenX - 8, screenY - 5, 4, 0, Math.PI * 2);
+          ctx.arc(screenX + 8, screenY - 5, 4, 0, Math.PI * 2);
+          ctx.fill();
+
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 12px Arial';
           ctx.textAlign = 'center';
-          ctx.fillText(boss.type.toUpperCase(), screenX, screenY - boss.height/2 - 10);
+          ctx.fillText(boss.type.toUpperCase(), screenX, screenY - boss.height / 2 - 10);
 
-          // Health bar
           ctx.fillStyle = '#000000';
-          ctx.fillRect(screenX - 25, screenY - boss.height/2 - 35, 50, 8);
+          ctx.fillRect(screenX - 30, screenY - boss.height / 2 - 40, 60, 10);
           ctx.fillStyle = '#ff0000';
           const healthPercent = Math.max(0, boss.health / boss.maxHealth);
-          ctx.fillRect(screenX - 25, screenY - boss.height/2 - 35, 50 * healthPercent, 8);
+          ctx.fillRect(screenX - 30, screenY - boss.height / 2 - 40, 60 * healthPercent, 10);
         }
       });
     }
 
-    function drawSky() {
-      ctx.fillStyle = '#87ceeb';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    function drawShop() {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillRect(canvas.width / 2 - 200, canvas.height / 2 - 150, 400, 300);
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(canvas.width / 2 - 200, canvas.height / 2 - 150, 400, 300);
 
-      // Clouds
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      const cloudOffset = (Date.now() * 0.0001) % canvas.width;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(100 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
-        ctx.arc(130 + i * 300 + cloudOffset, 40, 35, 0, Math.PI * 2);
-        ctx.arc(160 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.fillStyle = '#00d4ff';
+      ctx.font = 'bold 20px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('🛍️ SHOP 🛍️', canvas.width / 2, canvas.height / 2 - 120);
+
+      ctx.font = '12px Arial';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(`Coins: ${game.collectedCoins}`, canvas.width / 2, canvas.height / 2 - 90);
+
+      const rarities = Object.keys(RARITIES);
+      rarities.forEach((rarity, idx) => {
+        const x = canvas.width / 2 - 160 + (idx % 2) * 170;
+        const y = canvas.height / 2 - 50 + Math.floor(idx / 2) * 60;
+
+        ctx.fillStyle = RARITIES[rarity].color;
+        ctx.fillRect(x - 40, y - 20, 80, 40);
+        ctx.strokeStyle = '#ffffff';
+        ctx.strokeRect(x - 40, y - 20, 80, 40);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px Arial';
+        ctx.fillText(BEASTS[rarity].name, x, y - 8);
+        ctx.font = '10px Arial';
+        ctx.fillText(`$${RARITIES[rarity].cost}`, x, y + 8);
+      });
+
+      ctx.fillStyle = '#ffff00';
+      ctx.font = '12px Arial';
+      ctx.fillText('Press number key (1-5) to buy or SPACE to close', canvas.width / 2, canvas.height / 2 + 120);
     }
 
     function draw() {
-      drawSky();
+      drawBackground();
       drawTerrain();
       drawBlocks();
+      drawCoins();
+      drawParticles();
       drawBosses();
       drawPlayer();
 
-      // HUD
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.fillRect(10, 10, 200, 60);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(10, 10, 250, 90);
+      ctx.strokeStyle = '#00d4ff';
+      ctx.strokeRect(10, 10, 250, 90);
+
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 14px Arial';
       ctx.textAlign = 'left';
       ctx.fillText(`Level: ${game.level}`, 20, 30);
-      ctx.fillText(`HP: ${Math.max(0, game.health)}`, 20, 50);
+      ctx.fillText(`HP: ${Math.max(0, game.health)}/100`, 20, 50);
+      ctx.fillText(`Coins: ${game.collectedCoins}`, 20, 70);
 
       if (player.isTransformed) {
         ctx.fillStyle = '#ff6b00';
-        ctx.fillText('TRANSFORMED', 20, 70);
+        ctx.fillText('⚡ TRANSFORMED ⚡', 20, 90);
       }
+
+      if (player.y > game.mapHeight - TILE_SIZE * 3 - 60 && player.x < 200) {
+        ctx.fillStyle = 'rgba(0, 212, 255, 0.9)';
+        ctx.fillRect(canvas.width / 2 - 80, 20, 160, 30);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press S for Shop', canvas.width / 2, 40);
+      }
+
+      if (game.shopOpen) drawShop();
     }
 
     function gameLoop() {
@@ -772,25 +1015,34 @@
 
     document.addEventListener('keydown', (e) => {
       keys[e.key] = true;
-      
       if (e.key === ' ') {
         e.preventDefault();
-        if (player.onGround) {
+        if (game.shopOpen) {
+          game.shopOpen = false;
+        } else if (player.onGround) {
           player.velocityY = -15;
         }
       }
-      if (e.key.toLowerCase() === 'q') {
-        transform();
+      if (e.key.toLowerCase() === 'q') transform();
+      if (e.key.toLowerCase() === 's') {
+        if (player.y > game.mapHeight - TILE_SIZE * 3 - 60 && player.x < 200) {
+          game.shopOpen = !game.shopOpen;
+        }
       }
       if (e.key.toLowerCase() === 'r') {
         game.level = 1;
-        game.score = 0;
+        game.collectedCoins = 0;
         game.health = 100;
         player.x = 500;
         player.y = 400;
         player.isTransformed = false;
         generateBlocks();
         updateUI();
+      }
+      if (game.shopOpen && e.key >= '1' && e.key <= '5') {
+        const idx = parseInt(e.key) - 1;
+        const rarities = Object.keys(RARITIES);
+        if (idx < rarities.length) buyFromShop(rarities[idx]);
       }
     });
 
@@ -802,13 +1054,13 @@
       const rect = canvas.getBoundingClientRect();
       mouseX = e.clientX - rect.left;
       mouseY = e.clientY - rect.top;
-
-      if (player.isTransformed && player.attackFrame === 0) {
+      if (!game.shopOpen && player.isTransformed && player.attackFrame === 0) {
         player.isAttacking = true;
         player.attackFrame = 10;
       }
     });
 
+    game.collectedCoins = 0;
     generateBlocks();
     updateUI();
     gameLoop();
