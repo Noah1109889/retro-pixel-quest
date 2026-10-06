@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beast Blocks - Pixel Adventure</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --grid: #16213e;
+      --text: #eaeaea;
+      --accent: #00d4ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Courier New', monospace;
+      background: linear-gradient(135deg, var(--bg), var(--grid));
+      color: var(--text);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      gap: 20px;
+      padding: 20px;
+      max-width: 1400px;
+    }
+
+    #gameCanvas {
+      border: 4px solid var(--accent);
+      background: #87ceeb;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+      display: block;
+      width: 1000px;
+      height: 600px;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 280px;
+      background: rgba(22, 33, 62, 0.8);
+      border: 2px solid var(--accent);
+      padding: 15px;
+      border-radius: 8px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .panel {
+      background: rgba(26, 26, 46, 0.9);
+      border: 1px solid var(--accent);
+      padding: 12px;
+      border-radius: 4px;
+    }
+
+    .panel h3 {
+      color: var(--accent);
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      margin: 4px 0;
+    }
+
+    .stat-value {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .beast-slot {
+      background: rgba(0, 212, 255, 0.1);
+      border: 2px dashed var(--accent);
+      padding: 12px;
+      text-align: center;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      min-height: 60px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .beast-slot.active {
+      border-style: solid;
+      background: rgba(0, 212, 255, 0.2);
+      font-weight: bold;
+      color: var(--accent);
+    }
+
+    .rarity-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .rarity-common { background: #4caf50; color: white; }
+    .rarity-uncommon { background: #2196f3; color: white; }
+    .rarity-rare { background: #9c27b0; color: white; }
+    .rarity-epic { background: #ff9800; color: white; }
+    .rarity-legendary { background: #ffc107; color: black; }
+
+    .inventory {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .inv-item {
+      background: rgba(0, 212, 255, 0.05);
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      padding: 6px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .inv-item:hover {
+      background: rgba(0, 212, 255, 0.15);
+      border-color: var(--accent);
+    }
+
+    .inv-item.selected {
+      background: rgba(0, 212, 255, 0.3);
+      border-color: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .controls {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 10px;
+      border-radius: 4px;
+    }
+
+    .message {
+      color: var(--accent);
+      font-size: 0.85rem;
+      text-align: center;
+      min-height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse 0.5s;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    @media (max-width: 1024px) {
+      .container {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+      }
+      #gameCanvas {
+        width: 100%;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="sidebar">
+      <div class="panel">
+        <h3>🎮 Status</h3>
+        <div class="stat">
+          <span>Level:</span>
+          <span class="stat-value" id="level">1</span>
+        </div>
+        <div class="stat">
+          <span>Health:</span>
+          <span class="stat-value" id="health">100/100</span>
+        </div>
+        <div class="stat">
+          <span>Coins:</span>
+          <span class="stat-value" id="score">0</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>🐲 Beast Block</h3>
+        <div class="beast-slot" id="beastSlot">
+          [None Equipped]
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>📦 Inventory</h3>
+        <div class="inventory" id="inventory"></div>
+      </div>
+
+      <div class="panel">
+        <h3>⌨️ Controls</h3>
+        <div class="controls">
+          WASD/Arrows - Move<br/>
+          SPACE - Jump<br/>
+          CLICK Block - Equip<br/>
+          Q - Transform<br/>
+          LEFT CLICK - Attack<br/>
+          R - Reset Level
+        </div>
+      </div>
+
+      <div id="message" class="message"></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    canvas.width = 1000;
+    canvas.height = 600;
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    const RARITIES = {
+      common: { color: '#4caf50', label: 'COMMON', power: 1 },
+      uncommon: { color: '#2196f3', label: 'UNCOMMON', power: 1.5 },
+      rare: { color: '#9c27b0', label: 'RARE', power: 2 },
+      epic: { color: '#ff9800', label: 'EPIC', power: 2.5 },
+      legendary: { color: '#ffc107', label: 'LEGENDARY', power: 3 }
+    };
+
+    const BEASTS = {
+      common: { name: 'Goblin', damage: 5 },
+      uncommon: { name: 'Orc', damage: 8 },
+      rare: { name: 'Dragon', damage: 12 },
+      epic: { name: 'Phoenix', damage: 16 },
+      legendary: { name: 'Titan', damage: 20 }
+    };
+
+    // Player sprite (your 8-bit character)
+    const playerSprite = [
+      0b00111100, // Head top
+      0b01100110, // Head
+      0b01100110, // Head
+      0b00111100, // Head bottom
+      0b00011000, // Body top
+      0b00111100, // Body middle
+      0b00111100, // Body middle
+      0b00011000  // Legs
+    ];
+
+    const game = {
+      level: 1,
+      score: 0,
+      health: 100,
+      maxHealth: 100,
+      blocks: [],
+      selectedBlock: null,
+      equippedBeast: null,
+      transformActive: false,
+      bossDefeated: false,
+      bosses: [],
+      particles: [],
+      mapOffsetX: 0,
+      mapOffsetY: 0,
+      mapWidth: 3200,
+      mapHeight: 2400
+    };
+
+    const player = {
+      x: 500,
+      y: 400,
+      width: 32,
+      height: 40,
+      velocityY: 0,
+      velocityX: 0,
+      isJumping: false,
+      isTransformed: false,
+      transformTimer: 0,
+      power: 1,
+      direction: 1,
+      attackFrame: 0,
+      isAttacking: false,
+      animationFrame: 0,
+      onGround: false
+    };
+
+    const keys = {};
+    let mouseX = 0;
+    let mouseY = 0;
+
+    // Tile map system
+    const TILE_SIZE = 40;
+    const TILES = {
+      EMPTY: 0,
+      GRASS: 1,
+      DIRT: 2,
+      STONE: 3,
+      PLATFORM: 4
+    };
+
+    function generateTerrainMap() {
+      const tiles = [];
+      for (let y = 0; y < game.mapHeight / TILE_SIZE; y++) {
+        tiles[y] = [];
+        for (let x = 0; x < game.mapWidth / TILE_SIZE; x++) {
+          // Bottom ground
+          if (y > (game.mapHeight / TILE_SIZE) - 4) {
+            tiles[y][x] = TILES.GRASS;
+          }
+          // Platforms
+          else if (y === 10 && x > 5 && x < 20) {
+            tiles[y][x] = TILES.PLATFORM;
+          }
+          else if (y === 20 && x > 25 && x < 40) {
+            tiles[y][x] = TILES.PLATFORM;
+          }
+          else if (y === 15 && x > 45 && x < 60) {
+            tiles[y][x] = TILES.PLATFORM;
+          }
+          else {
+            tiles[y][x] = TILES.EMPTY;
+          }
+        }
+      }
+      return tiles;
+    }
+
+    let terrain = generateTerrainMap();
+
+    function getTileAt(worldX, worldY) {
+      const tileX = Math.floor(worldX / TILE_SIZE);
+      const tileY = Math.floor(worldY / TILE_SIZE);
+      if (tileY < 0 || tileY >= terrain.length || tileX < 0 || tileX >= terrain[tileY].length) {
+        return TILES.EMPTY;
+      }
+      return terrain[tileY][tileX];
+    }
+
+    function showMessage(text) {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      setTimeout(() => { msg.textContent = ''; }, 2000);
+    }
+
+    function generateBlocks() {
+      game.blocks = [];
+      const rarityKeys = Object.keys(RARITIES);
+      
+      for (let i = 0; i < 20 + game.level * 3; i++) {
+        const rarity = rarityKeys[Math.floor(Math.random() * rarityKeys.length)];
+        game.blocks.push({
+          x: Math.random() * (game.mapWidth - 60) + 30,
+          y: Math.random() * (game.mapHeight - 300) + 100,
+          rarity,
+          collected: false,
+          bob: Math.random() * Math.PI * 2
+        });
+      }
+
+      game.bosses = [];
+      for (let i = 0; i < Math.min(3, game.level); i++) {
+        game.bosses.push({
+          x: 300 + i * 600,
+          y: 200,
+          health: 100 + game.level * 30,
+          maxHealth: 100 + game.level * 30,
+          type: ['slime', 'knight', 'dragon'][i % 3],
+          width: 60,
+          height: 60,
+          velocityX: 0,
+          direction: 1,
+          defeated: false,
+          animFrame: 0
+        });
+      }
+    }
+
+    function updateUI() {
+      document.getElementById('level').textContent = game.level;
+      document.getElementById('health').textContent = `${Math.max(0, game.health)}/100`;
+      document.getElementById('score').textContent = game.score;
+
+      const beastSlot = document.getElementById('beastSlot');
+      if (player.isTransformed && game.equippedBeast) {
+        const beast = BEASTS[game.equippedBeast.rarity];
+        beastSlot.innerHTML = `<div style="font-weight: bold;">${beast.name}</div><span class="rarity-badge rarity-${game.equippedBeast.rarity}">${RARITIES[game.equippedBeast.rarity].label}</span>`;
+        beastSlot.classList.add('active');
+      } else {
+        beastSlot.innerHTML = '[None Equipped]';
+        beastSlot.classList.remove('active');
+      }
+
+      const invEl = document.getElementById('inventory');
+      invEl.innerHTML = '';
+      game.blocks.filter(b => b.collected).forEach((block, idx) => {
+        const item = document.createElement('div');
+        item.className = 'inv-item';
+        if (game.selectedBlock === block) item.classList.add('selected');
+        item.innerHTML = `<div>🧩</div><span class="rarity-badge rarity-${block.rarity}">${RARITIES[block.rarity].label}</span>`;
+        item.onclick = () => {
+          game.selectedBlock = game.selectedBlock === block ? null : block;
+          updateUI();
+        };
+        invEl.appendChild(item);
+      });
+    }
+
+    function collectBlock(block) {
+      if (!block.collected) {
+        block.collected = true;
+        game.score += RARITIES[block.rarity].power * 50;
+        showMessage(`Collected ${BEASTS[block.rarity].name} Block!`);
+      }
+    }
+
+    function transform() {
+      if (game.selectedBlock && !player.isTransformed) {
+        game.equippedBeast = game.selectedBlock;
+        player.isTransformed = true;
+        player.transformTimer = 10;
+        player.power = RARITIES[game.equippedBeast.rarity].power;
+        const beast = BEASTS[game.equippedBeast.rarity];
+        showMessage(`Transformed into ${beast.name}!`);
+      } else if (player.isTransformed) {
+        player.isTransformed = false;
+        player.transformTimer = 0;
+        player.power = 1;
+        showMessage('Transformation ended');
+      }
+    }
+
+    function damagePlayer(amount) {
+      game.health -= amount;
+      if (game.health <= 0) {
+        game.health = 0;
+        showMessage('Game Over! Resetting...');
+        setTimeout(() => {
+          game.level = 1;
+          game.score = 0;
+          game.health = 100;
+          player.x = 500;
+          player.y = 400;
+          player.isTransformed = false;
+          player.transformTimer = 0;
+          game.selectedBlock = null;
+          generateBlocks();
+          updateUI();
+        }, 1500);
+      }
+    }
+
+    function damageBoss(boss, damage) {
+      boss.health -= damage;
+      game.score += damage * 5;
+      if (boss.health <= 0) {
+        boss.health = 0;
+        boss.defeated = true;
+        showMessage('Boss Defeated!');
+      }
+    }
+
+    function checkBossDefeat() {
+      const allDefeated = game.bosses.every(b => b.defeated);
+      if (allDefeated && game.bosses.length > 0) {
+        showMessage(`Level ${game.level} Complete! Moving to Level ${game.level + 1}...`);
+        setTimeout(() => {
+          game.level++;
+          game.health = 100;
+          player.x = 500;
+          player.y = 400;
+          player.isTransformed = false;
+          generateBlocks();
+          updateUI();
+        }, 2000);
+      }
+    }
+
+    function update() {
+      // Gravity
+      player.velocityY += 0.8;
+      player.velocityY = Math.min(player.velocityY, 12);
+
+      // Input
+      let moveX = 0;
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+        moveX -= player.isTransformed ? 6 : 4;
+        player.direction = -1;
+      }
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+        moveX += player.isTransformed ? 6 : 4;
+        player.direction = 1;
+      }
+
+      player.velocityX = moveX;
+      player.x += player.velocityX;
+      player.y += player.velocityY;
+
+      // Collision detection
+      player.onGround = false;
+      
+      // Check tiles below
+      for (let dx = 0; dx < player.width; dx += 10) {
+        const tile = getTileAt(player.x + dx, player.y + player.height + 1);
+        if (tile !== TILES.EMPTY) {
+          player.y = Math.floor((Math.floor((player.y + player.height) / TILE_SIZE)) * TILE_SIZE) - player.height;
+          player.velocityY = 0;
+          player.onGround = true;
+          break;
+        }
+      }
+
+      // Boundaries
+      if (player.x < 0) player.x = 0;
+      if (player.x + player.width > game.mapWidth) player.x = game.mapWidth - player.width;
+      if (player.y > game.mapHeight + 200) {
+        damagePlayer(50);
+        player.y = 200;
+      }
+
+      // Update camera
+      game.mapOffsetX = player.x - canvas.width / 3;
+      game.mapOffsetY = player.y - canvas.height / 2;
+      game.mapOffsetX = Math.max(0, Math.min(game.mapOffsetX, game.mapWidth - canvas.width));
+      game.mapOffsetY = Math.max(0, Math.min(game.mapOffsetY, game.mapHeight - canvas.height));
+
+      // Block collection
+      game.blocks.forEach(block => {
+        if (!block.collected && 
+            Math.hypot(player.x - block.x, player.y - block.y) < 40) {
+          collectBlock(block);
+        }
+      });
+
+      // Boss AI and collision
+      game.bosses.forEach(boss => {
+        if (!boss.defeated) {
+          // Boss simple AI
+          boss.animFrame = (boss.animFrame + 1) % 20;
+          
+          if (Math.hypot(player.x - boss.x, player.y - boss.y) < 300) {
+            if (Math.random() < 0.02) {
+              boss.direction *= -1;
+            }
+            boss.velocityX = boss.direction * 2;
+          } else {
+            boss.velocityX *= 0.95;
+          }
+
+          boss.x += boss.velocityX;
+          boss.y += 0.5;
+
+          // Boss collision
+          if (Math.hypot(player.x - boss.x, player.y - boss.y) < 50) {
+            if (player.isTransformed && player.isAttacking) {
+              const damage = 5 * player.power;
+              damageBoss(boss, damage);
+              player.isAttacking = false;
+            } else if (!player.isTransformed) {
+              damagePlayer(10);
+            }
+          }
+        }
+      });
+
+      // Transform duration
+      if (player.isTransformed) {
+        player.transformTimer -= 0.016;
+        if (player.transformTimer <= 0) {
+          player.isTransformed = false;
+          player.power = 1;
+        }
+      }
+
+      // Attack cooldown
+      if (player.attackFrame > 0) {
+        player.attackFrame--;
+      }
+
+      // Animation
+      player.animationFrame = (player.animationFrame + 1) % 8;
+
+      checkBossDefeat();
+      updateUI();
+    }
+
+    function drawTerrain() {
+      const startTileX = Math.floor(game.mapOffsetX / TILE_SIZE);
+      const startTileY = Math.floor(game.mapOffsetY / TILE_SIZE);
+      const endTileX = Math.ceil((game.mapOffsetX + canvas.width) / TILE_SIZE);
+      const endTileY = Math.ceil((game.mapOffsetY + canvas.height) / TILE_SIZE);
+
+      for (let ty = startTileY; ty < endTileY; ty++) {
+        for (let tx = startTileX; tx < endTileX; tx++) {
+          if (ty < 0 || ty >= terrain.length || tx < 0 || tx >= terrain[ty].length) continue;
+
+          const tile = terrain[ty][tx];
+          const screenX = tx * TILE_SIZE - game.mapOffsetX;
+          const screenY = ty * TILE_SIZE - game.mapOffsetY;
+
+          if (tile === TILES.GRASS) {
+            ctx.fillStyle = '#2d5016';
+            ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = '#3d7f1f';
+            ctx.fillRect(screenX + 2, screenY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          } else if (tile === TILES.PLATFORM) {
+            ctx.fillStyle = '#8b4513';
+            ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+            ctx.fillStyle = '#a0522d';
+            ctx.fillRect(screenX + 2, screenY + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+          }
+        }
+      }
+    }
+
+    function drawPlayer() {
+      const screenX = player.x - game.mapOffsetX;
+      const screenY = player.y - game.mapOffsetY;
+
+      ctx.save();
+      if (player.direction === -1) {
+        ctx.scale(-1, 1);
+        ctx.translate(-player.width, 0);
+      }
+
+      if (player.isTransformed) {
+        // Transform mode - larger beast form
+        ctx.fillStyle = '#ff6b00';
+        ctx.fillRect(screenX - player.width/2, screenY - player.height/2, player.width * 1.5, player.height * 1.5);
+        ctx.fillStyle = '#ffa500';
+        ctx.beginPath();
+        ctx.arc(screenX, screenY - player.height/3, 20, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (player.isAttacking) {
+          ctx.fillStyle = '#ffff00';
+          ctx.fillRect(screenX + 30, screenY - 10, 20, 20);
+        }
+      } else {
+        // Normal player sprite
+        ctx.fillStyle = '#a78bfa';
+        ctx.fillRect(screenX, screenY - 30, player.width, 30); // Hair
+        ctx.fillStyle = '#fdbf69';
+        ctx.fillRect(screenX + 8, screenY - 24, 16, 10); // Face
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(screenX + 12, screenY - 20, 3, 3); // Eyes
+        ctx.fillRect(screenX + 19, screenY - 20, 3, 3);
+        
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(screenX + 4, screenY, player.width - 8, player.height - 30); // Body
+        ctx.fillStyle = '#3d3d5c';
+        ctx.fillRect(screenX + 6, screenY - 8, player.width - 12, 8); // Belt
+      }
+
+      ctx.restore();
+    }
+
+    function drawBlocks() {
+      game.blocks.forEach(block => {
+        if (!block.collected) {
+          const screenX = block.x - game.mapOffsetX;
+          const screenY = block.y - game.mapOffsetY + Math.sin(Date.now() * 0.003 + block.bob) * 5;
+
+          ctx.fillStyle = RARITIES[block.rarity].color;
+          ctx.fillRect(screenX - 16, screenY - 16, 32, 32);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(screenX - 12, screenY - 12, 24, 24);
+          ctx.fillStyle = RARITIES[block.rarity].color;
+          ctx.font = 'bold 12px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('◆', screenX, screenY + 5);
+        }
+      });
+    }
+
+    function drawBosses() {
+      game.bosses.forEach(boss => {
+        if (!boss.defeated) {
+          const screenX = boss.x - game.mapOffsetX;
+          const screenY = boss.y - game.mapOffsetY;
+
+          ctx.fillStyle = '#ff0000';
+          ctx.fillRect(screenX - boss.width/2, screenY - boss.height/2, boss.width, boss.height);
+          ctx.fillStyle = '#ffcc00';
+          ctx.fillRect(screenX - boss.width/2 + 6, screenY - boss.height/2 + 6, boss.width - 12, boss.height - 12);
+
+          // Boss name
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 12px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(boss.type.toUpperCase(), screenX, screenY - boss.height/2 - 10);
+
+          // Health bar
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(screenX - 25, screenY - boss.height/2 - 35, 50, 8);
+          ctx.fillStyle = '#ff0000';
+          const healthPercent = Math.max(0, boss.health / boss.maxHealth);
+          ctx.fillRect(screenX - 25, screenY - boss.height/2 - 35, 50 * healthPercent, 8);
+        }
+      });
+    }
+
+    function drawSky() {
+      ctx.fillStyle = '#87ceeb';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Clouds
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      const cloudOffset = (Date.now() * 0.0001) % canvas.width;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(100 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
+        ctx.arc(130 + i * 300 + cloudOffset, 40, 35, 0, Math.PI * 2);
+        ctx.arc(160 + i * 300 + cloudOffset, 50, 30, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function draw() {
+      drawSky();
+      drawTerrain();
+      drawBlocks();
+      drawBosses();
+      drawPlayer();
+
+      // HUD
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(10, 10, 200, 60);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Level: ${game.level}`, 20, 30);
+      ctx.fillText(`HP: ${Math.max(0, game.health)}`, 20, 50);
+
+      if (player.isTransformed) {
+        ctx.fillStyle = '#ff6b00';
+        ctx.fillText('TRANSFORMED', 20, 70);
+      }
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (player.onGround) {
+          player.velocityY = -15;
+        }
+      }
+      if (e.key.toLowerCase() === 'q') {
+        transform();
+      }
+      if (e.key.toLowerCase() === 'r') {
+        game.level = 1;
+        game.score = 0;
+        game.health = 100;
+        player.x = 500;
+        player.y = 400;
+        player.isTransformed = false;
+        generateBlocks();
+        updateUI();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+
+    document.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseX = e.clientX - rect.left;
+      mouseY = e.clientY - rect.top;
+
+      if (player.isTransformed && player.attackFrame === 0) {
+        player.isAttacking = true;
+        player.attackFrame = 10;
+      }
+    });
+
+    generateBlocks();
+    updateUI();
+    gameLoop();
+  </script>
+</body>
+</html>
